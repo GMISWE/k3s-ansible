@@ -116,3 +116,38 @@
   loop:
     - { src: '/run/k3s/containerd/containerd.sock', dest: '/var/run/containerd/containerd.sock' }
   when: not ansible_check_mode
+
+# ============================================
+# Post-registration node configuration
+# Apply taints and labels after node registration
+# ============================================
+- name: Wait for node to be registered in cluster
+  when: not ansible_check_mode and (gpu_node_taints is defined or gpu_node_labels is defined)
+  delegate_to: "{{ groups[server_group][0] }}"
+  ansible.builtin.command:
+    cmd: k3s kubectl get node {{ inventory_hostname }}
+  register: node_check
+  until: node_check.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Apply node labels
+  when: not ansible_check_mode and gpu_node_labels is defined
+  delegate_to: "{{ groups[server_group][0] }}"
+  ansible.builtin.command:
+    cmd: k3s kubectl label node {{ inventory_hostname }} {{ item.key }}={{ item.value }} --overwrite
+  loop: "{{ gpu_node_labels | dict2items }}"
+  register: label_result
+  changed_when: label_result.rc == 0
+  failed_when: false
+
+- name: Apply node taints
+  when: not ansible_check_mode and gpu_node_taints is defined
+  delegate_to: "{{ groups[server_group][0] }}"
+  ansible.builtin.command:
+    cmd: k3s kubectl taint node {{ inventory_hostname }} {{ item.key }}={{ item.value }}:{{ item.effect }} --overwrite
+  loop: "{{ gpu_node_taints }}"
+  register: taint_result
+  changed_when: taint_result.rc == 0
+  failed_when: false

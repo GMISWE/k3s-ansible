@@ -6,7 +6,7 @@
 # Basic Connection Settings
 # ============================================
 ansible_port: 22
-ansible_user: root
+ansible_user: ubuntu
 
 # ============================================
 # k3s Version and Token
@@ -40,6 +40,8 @@ api_port: 6443
 # Note: must use YAML string format (| or >)
 # ============================================
 server_config_yaml: |
+  cluster-cidr: "10.100.0.0/16"
+  service-cidr: "10.110.0.0/16"
   kube-apiserver-arg:
     # network latency tolerance configuration - for cross-public-network connection
     - "default-not-ready-toleration-seconds=300"
@@ -48,6 +50,7 @@ server_config_yaml: |
     # API Server timeout configuration - for cross-public-network latency
     - "request-timeout=300s"
     - "min-request-timeout=300"
+    - "event-ttl=24h"
     
   kubelet-arg:
     - "cloud-provider=external"

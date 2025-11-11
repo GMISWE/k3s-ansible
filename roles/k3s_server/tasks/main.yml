@@ -366,3 +366,27 @@
         path: ~{{ ansible_user }}/.bashrc
         regexp: '\.\s+<\(kubectl completion bash\)'
         line: ". <(kubectl completion bash)  # Added by k3s-ansible"
+
+# ============================================
+# Post-registration node configuration
+# Apply control-plane taint to prevent regular pods from scheduling on master nodes
+# ============================================
+- name: Wait for node to be registered in cluster
+  when: not ansible_check_mode
+  delegate_to: "{{ inventory_hostname }}"
+  ansible.builtin.command:
+    cmd: k3s kubectl get node {{ inventory_hostname }}
+  register: node_check
+  until: node_check.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Apply control-plane taint to master node
+  when: not ansible_check_mode
+  delegate_to: "{{ inventory_hostname }}"
+  ansible.builtin.command:
+    cmd: k3s kubectl taint node {{ inventory_hostname }} node-role.kubernetes.io/control-plane=:NoSchedule --overwrite
+  register: taint_result
+  changed_when: taint_result.rc == 0
+  failed_when: false
