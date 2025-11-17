@@ -159,6 +159,27 @@
     - net.bridge.bridge-nf-call-iptables
     - net.bridge.bridge-nf-call-ip6tables
 
+- name: Set system limits for stack and file descriptors
+  ansible.builtin.copy:
+    dest: /etc/security/limits.conf
+    content: |
+      * soft stack unlimited
+      * hard stack unlimited
+      * soft nofile 1048576
+      * hard nofile 1048576
+    mode: '0644'
+    backup: true
+
+- name: Configure inotify file monitoring limits
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    - { name: 'fs.inotify.max_user_watches', value: '1048576' }
+    - { name: 'fs.inotify.max_user_instances', value: '1024' }
+
 - name: Check for Apparmor existence
   ansible.builtin.stat:
     path: /sys/module/apparmor/parameters/enabled

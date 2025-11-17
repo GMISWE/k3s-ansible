@@ -1,0 +1,152 @@
+---
+# k3s Cluster Configuration Variables
+# These variables apply to all hosts in the k3s_cluster group
+
+# ============================================
+# Basic Connection Settings
+# ============================================
+ansible_port: 22
+ansible_user: ubuntu
+
+# ============================================
+# k3s Version and Token
+# ============================================
+k3s_version: v1.31.12+k3s1
+
+# Generate secure token: openssl rand -base64 64
+# You can use ansible-vault to encrypt this value / keep it secret
+token: "tokenofk3sinstallation"
+
+# ============================================
+# Disable Components
+# ============================================
+# Components to disable (traefik, servicelb, local-storage, etc.)
+# These will be converted to --disable parameters
+disable:
+  - traefik
+  - servicelb
+  - local-storage
+
+# ============================================
+# API Endpoint Configuration
+# ============================================
+# API endpoint - use EKS master's public IP or DNS
+# This will be dynamically resolved to the first server's ansible_host
+api_endpoint: "{{ hostvars[groups['server'][0]]['ansible_host'] | default(groups['server'][0]) }}"
+api_port: 6443
+
+# ============================================
+# Master Node Configuration (EKS environment)
+# Note: must use YAML string format (| or >)
+# ============================================
+server_config_yaml: |
+  cluster-cidr: "10.100.0.0/16"
+  service-cidr: "10.110.0.0/16"
+  kube-apiserver-arg:
+    # network latency tolerance configuration - for cross-public-network connection
+    - "default-not-ready-toleration-seconds=300"
+    - "default-unreachable-toleration-seconds=300"
+    
+    # API Server timeout configuration - for cross-public-network latency
+    - "request-timeout=300s"
+    - "min-request-timeout=300"
+    - "event-ttl=24h"
+    
+  kubelet-arg:
+    - "cloud-provider=external"
+    - "max-pods=100"
+    - "eviction-hard=memory.available<2Gi,nodefs.available<10%,imagefs.available<15%"
+    - "eviction-pressure-transition-period=1m"
+    - "eviction-max-pod-grace-period=60"
+    - "system-reserved=cpu=500m,memory=1Gi"
+    - "kube-reserved=cpu=500m,memory=1Gi"
+    # note: do not specify node-ip, let kubelet automatically detect the internal IP
+    # public IP is specified by --node-external-ip parameter
+    
+    # network related configuration - for cross-public-network connection
+    - "node-status-update-frequency=10s"
+    - "runtime-request-timeout=10m"
+    
+    # connection retry configuration
+    - "kube-api-burst=100"
+    - "kube-api-qps=50"
+
+# ============================================
+# GPU Worker Node Configuration - cross-public-network connection
+# Note: must use YAML string format (| or >)
+# ============================================
+agent_config_yaml: |
+  kubelet-arg:
+    # basic configuration
+    - "cloud-provider=external"
+    # note: do not specify node-ip, let kubelet automatically detect the internal IP
+    # public IP is specified by --node-external-ip parameter
+    
+    # GPU related configuration
+    - "max-pods=100"
+    
+    # resource reservation configuration - GPU nodes need more reservation
+    - "system-reserved=cpu=2000m,memory=4Gi"
+    - "kube-reserved=cpu=1000m,memory=2Gi"
+    - "eviction-hard=memory.available<4Gi,nodefs.available<10%,imagefs.available<15%"
+    - "eviction-pressure-transition-period=2m"
+    - "eviction-max-pod-grace-period=120"
+    
+    # network connection configuration - key: adapt to cross-public-network connection
+    - "node-status-update-frequency=10s"
+    - "runtime-request-timeout=15m"
+    
+    # API connection configuration - for cross-public-network latency optimization
+    - "kube-api-burst=50"
+    - "kube-api-qps=25"
+    - "serialize-image-pulls=false"
+
+# ============================================
+# etcd Snapshot Configuration Variables (optional)
+# If using S3 backup, please uncomment and fill in the corresponding values
+# ============================================
+# etcd_s3_bucket: "your-s3-bucket-name"
+# etcd_s3_access_key: "your-access-key"
+# etcd_s3_secret_key: "your-secret-key"
+# etcd_s3_region: "us-east-1"
+# etcd_s3_folder: "k3s-backups"
+# etcd_s3_endpoint: ""  # optional, for S3 compatible service
+
+# ============================================
+# Additional Server Parameters
+# ============================================
+# Note: disable components are automatically converted to --disable parameters
+# Format: --disable=traefik,servicelb,local-storage
+extra_server_args: >
+  --tls-san={{ api_endpoint }}
+  --flannel-backend=wireguard-native
+  --flannel-external-ip
+  --node-name={{ inventory_hostname }}
+  --advertise-address={{ ansible_host }}
+  --node-external-ip={{ ansible_host }}
+  --disable={{ disable | default([]) | join(',') }}
+  # etcd snapshot configuration - local snapshot
+  --etcd-snapshot-compress
+  --etcd-snapshot-retention=10
+  --etcd-snapshot-schedule-cron="0 */6 * * *"
+  # etcd S3 backup configuration (optional, uncomment to enable)
+  # way 1: directly configure (uncomment and fill in the value)
+  # --etcd-s3
+  # --etcd-s3-bucket=your-bucket-name
+  # --etcd-s3-access-key=your-access-key
+  # --etcd-s3-secret-key=your-secret-key
+  # --etcd-s3-region=us-east-1
+  # --etcd-s3-folder=k3s-backups
+  # --etcd-s3-timeout=10m
+  # --etcd-s3-endpoint=s3.amazonaws.com  # optional, for S3 compatible service
+  # way 2: use Secret (recommended, more secure)
+  # --etcd-s3
+  # --etcd-s3-config-secret=etcd-s3-backup
+
+# ============================================
+# Additional Agent Parameters
+# ============================================
+extra_agent_args: >
+  --node-name={{ inventory_hostname }}
+  --node-external-ip={{ ansible_host }}
+
