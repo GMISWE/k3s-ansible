@@ -6,7 +6,7 @@
 # Basic Connection Settings
 # ============================================
 ansible_port: 22
-ansible_user: ubuntu
+ansible_user: root
 
 # ============================================
 # k3s Version and Token
@@ -102,6 +102,20 @@ agent_config_yaml: |
     - "serialize-image-pulls=false"
 
 # ============================================
+# Kube-Proxy Mode Configuration
+# ============================================
+# Options: 'iptables' (default) or 'ipvs'
+# IPVS mode requires kernel modules: ip_vs, ip_vs_rr, ip_vs_wrr, ip_vs_sh, nf_conntrack
+# Recommended: Use 'ipvs' when Service count > 1000 for better performance
+# Note: Changing this requires rolling update of all nodes
+kube_proxy_mode: iptables
+
+# IPVS scheduler algorithm (only used when kube_proxy_mode is 'ipvs')
+# Options: rr (round-robin), lc (least-connection), sh (source-hashing), wrr (weighted-rr)
+# Recommended 'lc' for cross-network environments with varying latency
+ipvs_scheduler: lc
+
+# ============================================
 # etcd Snapshot Configuration Variables (optional)
 # If using S3 backup, please uncomment and fill in the corresponding values
 # ============================================
@@ -125,10 +139,15 @@ extra_server_args: >
   --advertise-address={{ ansible_host }}
   --node-external-ip={{ ansible_host }}
   --disable={{ disable | default([]) | join(',') }}
-  # etcd snapshot configuration - local snapshot
+  --kube-scheduler-arg=config=/etc/rancher/k3s/scheduler-config.yaml
+  --kube-proxy-arg=proxy-mode={{ kube_proxy_mode | default('iptables') }}
+  {% if kube_proxy_mode | default('iptables') == 'ipvs' %}--kube-proxy-arg=ipvs-scheduler={{ ipvs_scheduler | default('lc') }}{% endif %}
   --etcd-snapshot-compress
   --etcd-snapshot-retention=10
   --etcd-snapshot-schedule-cron="0 */6 * * *"
+  --etcd-arg=quota-backend-bytes=8589934592
+  --etcd-arg=auto-compaction-mode=periodic
+  --etcd-arg=auto-compaction-retention=1h
   # etcd S3 backup configuration (optional, uncomment to enable)
   # way 1: directly configure (uncomment and fill in the value)
   # --etcd-s3
@@ -149,4 +168,6 @@ extra_server_args: >
 extra_agent_args: >
   --node-name={{ inventory_hostname }}
   --node-external-ip={{ ansible_host }}
+  --kube-proxy-arg=proxy-mode={{ kube_proxy_mode | default('iptables') }}
+  {% if kube_proxy_mode | default('iptables') == 'ipvs' %}--kube-proxy-arg=ipvs-scheduler={{ ipvs_scheduler | default('lc') }}{% endif %}
 

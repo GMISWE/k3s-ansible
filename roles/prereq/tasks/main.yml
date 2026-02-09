@@ -159,6 +159,46 @@
     - net.bridge.bridge-nf-call-iptables
     - net.bridge.bridge-nf-call-ip6tables
 
+- name: Add IPVS kernel modules to /etc/modules-load.d/
+  ansible.builtin.copy:
+    content: |
+      ip_vs
+      ip_vs_rr
+      ip_vs_wrr
+      ip_vs_sh
+      nf_conntrack
+    dest: /etc/modules-load.d/ipvs.conf
+    mode: "u=rw,g=r,o=r"
+  when: kube_proxy_mode | default('iptables') == 'ipvs'
+
+- name: Load IPVS kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - ip_vs
+    - ip_vs_rr
+    - ip_vs_wrr
+    - ip_vs_sh
+    - nf_conntrack
+  when: kube_proxy_mode | default('iptables') == 'ipvs'
+
+- name: Configure IPVS connection timeouts for cross-network latency
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    # Increase conntrack timeout for high-latency connections
+    - { name: 'net.netfilter.nf_conntrack_tcp_timeout_established', value: '86400' }
+    - { name: 'net.netfilter.nf_conntrack_tcp_timeout_close_wait', value: '3600' }
+    # Increase conntrack table size for large number of services
+    - { name: 'net.netfilter.nf_conntrack_max', value: '1048576' }
+    - { name: 'net.nf_conntrack_max', value: '1048576' }
+  when: kube_proxy_mode | default('iptables') == 'ipvs'
+  ignore_errors: true
+
 - name: Set system limits for stack and file descriptors
   ansible.builtin.copy:
     dest: /etc/security/limits.conf
